@@ -1,0 +1,81 @@
+# Dependencies
+node_modules/
+
+# Next.js and production builds
+.next/
+out/
+build/
+dist/
+
+# TypeScript and tooling caches
+*.tsbuildinfo
+.turbo/
+.cache/
+.eslintcache
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs and package-manager diagnostics
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Tests and coverage
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Local databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Editor, OS, and local workspace files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local AI-assistant configuration and transcripts
+.claude/
+.codex/
+.cursor/
+.windsurf/
+.aider*
+AGENTS.md
+CLAUDE.md
+copilot-instructions.md
+*.prompt.md
+
+# Internal notes and generated documentation
+*.md
+!README.md
+
+# Local captures and reference screenshots
+screencapture-*.png
+screenshot-*.png
+Screenshot*.png
+
+# Deployment metadata
+.vercel/
+.netlify/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
