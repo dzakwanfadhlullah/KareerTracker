@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Archive, CalendarPlus, ExternalLink, MessageSquareText, X } from "lucide-react";
+import { Archive, CalendarPlus, ExternalLink, FilePlus, MessageSquareText, Save, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -16,13 +16,14 @@ const applicationSchema = z.object({
   source: z.string().min(1, "Sumber lowongan perlu dipilih."),
   status: z.enum(applicationStatuses as [ApplicationStatus, ...ApplicationStatus[]]),
   jobUrl: z.union([z.url("Link lowongan belum valid."), z.literal("")]).optional(),
+  followUpAt: z.string().optional(),
   nextAction: z.string().optional(),
   notes: z.string().optional(),
 });
 type ApplicationForm = z.infer<typeof applicationSchema>;
 
 export function AddApplicationDialog() {
-  const { addOpen, setAddOpen, addApplication } = useDashboard();
+  const { addOpen, setAddOpen, addApplication, actionPending } = useDashboard();
   const { register, handleSubmit, reset, formState: { errors } } = useForm<ApplicationForm>({
     resolver: zodResolver(applicationSchema),
     defaultValues: { status: "saved", source: "MagangKareer" },
@@ -49,10 +50,11 @@ export function AddApplicationDialog() {
             <label><span>Source</span><select {...register("source")}>{["MagangKareer", "LinkedIn", "Glints", "Kalibrr", "JobStreet", "Company Website", "Instagram", "Referral", "Campus Career Center", "Other"].map((source) => <option key={source}>{source}</option>)}</select></label>
             <label><span>Status</span><select {...register("status")}>{applicationStatuses.map((status) => <option value={status} key={status}>{applicationStatusLabels[status]}</option>)}</select></label>
             <label className="app-form-full"><span>Job Link</span><input placeholder="https://..." {...register("jobUrl")} />{errors.jobUrl && <small>{errors.jobUrl.message}</small>}</label>
+            <label><span>Follow-Up Date</span><input type="date" {...register("followUpAt")} /></label>
             <label className="app-form-full"><span>Next Action</span><input placeholder="Review requirements" {...register("nextAction")} /></label>
             <label className="app-form-full"><span>Notes</span><textarea rows={3} placeholder="Catatan penting tentang role ini..." {...register("notes")} /></label>
           </div>
-          <footer><button type="button" className="app-button app-button-secondary" onClick={() => setAddOpen(false)}>Cancel</button><button type="submit" className="app-button app-button-primary">Save Application</button></footer>
+          <footer><button type="button" className="app-button app-button-secondary" onClick={() => setAddOpen(false)}>Cancel</button><button type="submit" className="app-button app-button-primary" disabled={actionPending}>{actionPending ? "Saving..." : "Save Application"}</button></footer>
         </form>
       </section>
     </div>
@@ -60,11 +62,36 @@ export function AddApplicationDialog() {
 }
 
 export function ApplicationDetailDrawer() {
-  const { applications, events, interviews, selectedId, selectApplication, updateStatus, setFollowUp, archiveApplication } = useDashboard();
+  const {
+    applications,
+    events,
+    followUps,
+    interviews,
+    companies,
+    documents,
+    selectedId,
+    selectApplication,
+    updateStatus,
+    setFollowUp,
+    archiveApplication,
+    createInterview,
+    updateCompanyResearch,
+    attachDocument,
+    markFinalResult,
+    actionPending,
+  } = useDashboard();
   const application = applications.find((item) => item.id === selectedId);
   const timeline = useMemo(() => events.filter((item) => item.applicationId === selectedId), [events, selectedId]);
-  const interview = interviews.find((item) => item.applicationId === selectedId);
+  const applicationInterviews = interviews.filter((item) => item.applicationId === selectedId);
+  const activeFollowUp = followUps.find((item) => item.applicationId === selectedId && !["completed", "cancelled", "rescheduled"].includes(item.status));
+  const company = companies.find((item) => item.name === application?.companyName);
+  const linkedDocuments = documents.filter((document) => document.linkedApplicationIds.includes(selectedId || ""));
   const [followDate, setFollowDate] = useState("");
+  const [researchNotes, setResearchNotes] = useState("");
+  const [documentName, setDocumentName] = useState("");
+  const [documentUrl, setDocumentUrl] = useState("");
+  const [finalResult, setFinalResult] = useState<"accepted" | "rejected" | "ghosted">("rejected");
+  const [reflectionNotes, setReflectionNotes] = useState("");
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => event.key === "Escape" && selectApplication(null);
@@ -88,19 +115,29 @@ export function ApplicationDetailDrawer() {
           </DetailSection>
           <DetailSection title="Follow-Up">
             <div className="app-inline-form"><CalendarPlus size={17} /><input type="date" value={followDate} onChange={(event) => setFollowDate(event.target.value)} /><button type="button" onClick={() => followDate && setFollowUp(application.id, new Date(`${followDate}T09:00:00`).toISOString())}>Save Follow-Up</button></div>
-            {application.followUpAt && <p className="app-detail-note">Dijadwalkan {new Date(application.followUpAt).toLocaleDateString("id-ID", { dateStyle: "full" })}</p>}
+            {(activeFollowUp || application.followUpAt) && <p className="app-detail-note">Dijadwalkan {new Date(activeFollowUp?.dueAt || application.followUpAt || "").toLocaleDateString("id-ID", { dateStyle: "full" })}</p>}
           </DetailSection>
           <DetailSection title="Interview Notes">
-            {interview ? <div className="app-detail-note"><b>{interview.stage.replaceAll("_", " ")}</b><p>{interview.preparationNotes}</p><ul>{interview.questionsToPrepare.map((question) => <li key={question}>{question}</li>)}</ul></div> : <p className="app-muted">Belum ada catatan interview.</p>}
+            {applicationInterviews.length ? applicationInterviews.map((interview) => <div className="app-detail-note" key={interview.id}><b>{interview.stage.replaceAll("_", " ")}</b><p>{interview.preparationNotes || "Belum ada catatan persiapan."}</p>{interview.questionsToPrepare.length > 0 && <ul>{interview.questionsToPrepare.map((question) => <li key={question}>{question}</li>)}</ul>}</div>) : <p className="app-muted">Belum ada catatan interview.</p>}
+            <button type="button" className="app-button app-button-secondary" disabled={actionPending} onClick={() => createInterview({ applicationId: application.id, stage: "hr_interview", scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), preparationNotes: "Prepare STAR answers and company context.", questionsToPrepare: ["Ceritakan pengalaman paling relevan.", "Kenapa tertarik role ini?", "Apa pertanyaan untuk interviewer?"], nextStep: "Review company research" })}><MessageSquareText size={16} />Add Interview</button>
           </DetailSection>
-          <DetailSection title="Company Research"><div className="app-detail-note"><b>Why I apply</b><p>{application.notes || "Belum ada riset perusahaan."}</p></div></DetailSection>
-          <DetailSection title="Documents Used"><p className="app-muted">Belum ada dokumen yang ditautkan.</p></DetailSection>
+          <DetailSection title="Company Research">
+            <div className="app-detail-note"><b>Why I apply</b><p>{company?.whyIApply || application.notes || "Belum ada riset perusahaan."}</p></div>
+            <div className="app-inline-form app-inline-form-stack"><textarea rows={3} placeholder="Tambahkan alasan apply, catatan culture, red flags, atau pertanyaan..." value={researchNotes} onChange={(event) => setResearchNotes(event.target.value)} /><button type="button" disabled={actionPending || !researchNotes.trim()} onClick={() => updateCompanyResearch({ applicationId: application.id, name: application.companyName, whyIApply: researchNotes, companyNotes: researchNotes })}><Save size={15} />Save Research</button></div>
+          </DetailSection>
+          <DetailSection title="Documents Used">
+            {linkedDocuments.length ? <div className="app-detail-note">{linkedDocuments.map((document) => <p key={document.id}><b>{document.name}</b> {document.url && <a href={document.url} target="_blank" rel="noreferrer">Open</a>}</p>)}</div> : <p className="app-muted">Belum ada dokumen yang ditautkan.</p>}
+            <div className="app-inline-form app-inline-form-stack"><input placeholder="Nama dokumen, contoh: CV ATS Product" value={documentName} onChange={(event) => setDocumentName(event.target.value)} /><input placeholder="https://..." value={documentUrl} onChange={(event) => setDocumentUrl(event.target.value)} /><button type="button" disabled={actionPending || !documentName.trim()} onClick={() => { attachDocument({ applicationId: application.id, name: documentName, url: documentUrl, type: "cv_ats", status: "ready" }); setDocumentName(""); setDocumentUrl(""); }}><FilePlus size={15} />Attach Document</button></div>
+          </DetailSection>
           <DetailSection title="Activity Timeline">
             <div className="app-timeline">{timeline.length ? timeline.map((event) => <div key={event.id}><i /><p><b>{event.title}</b><span>{event.description}</span><small>{new Date(event.createdAt).toLocaleDateString("id-ID", { dateStyle: "medium" })}</small></p></div>) : <p className="app-muted">Belum ada aktivitas.</p>}</div>
           </DetailSection>
-          {application.reflectionNotes && <DetailSection title="Result and Reflection"><p className="app-detail-note">{application.reflectionNotes}</p></DetailSection>}
+          <DetailSection title="Result and Reflection">
+            {application.reflectionNotes && <p className="app-detail-note">{application.reflectionNotes}</p>}
+            <div className="app-inline-form app-inline-form-stack"><select value={finalResult} onChange={(event) => setFinalResult(event.target.value as "accepted" | "rejected" | "ghosted")}><option value="accepted">accepted</option><option value="rejected">rejected</option><option value="ghosted">ghosted</option></select><textarea rows={3} placeholder="Refleksi singkat: apa yang bisa diperbaiki?" value={reflectionNotes} onChange={(event) => setReflectionNotes(event.target.value)} /><button type="button" disabled={actionPending} onClick={() => markFinalResult({ applicationId: application.id, result: finalResult, reflectionNotes })}>Mark Final Result</button></div>
+          </DetailSection>
         </div>
-        <footer className="app-drawer-footer"><button type="button" className="app-button app-button-secondary"><MessageSquareText size={16} />Add Interview</button><button type="button" className="app-button app-button-ghost" onClick={() => archiveApplication(application.id)}><Archive size={16} />Archive</button></footer>
+        <footer className="app-drawer-footer"><button type="button" className="app-button app-button-secondary" disabled={actionPending} onClick={() => createInterview({ applicationId: application.id, stage: "hr_interview", scheduledAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), preparationNotes: "Prepare interview notes." })}><MessageSquareText size={16} />Add Interview</button><button type="button" className="app-button app-button-ghost" disabled={actionPending} onClick={() => archiveApplication(application.id)}><Archive size={16} />Archive</button></footer>
       </aside>
     </div>
   );

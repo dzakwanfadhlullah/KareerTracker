@@ -20,7 +20,7 @@ export function ApplicationList({ applications, compact = false }: { application
           <span className="app-status-cell"><StatusPill status={application.status} />{application.attentionStatus === "follow_up_needed" && <AttentionBadge />}</span>
           <span className="app-next-cell">{application.nextAction || "Belum ada next action"}{application.followUpAt && <small><Clock3 size={12} />{new Date(application.followUpAt).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}</small>}</span>
           <span className="app-source-cell">{application.source}</span>
-          <span className="app-updated-cell">today<ChevronRight size={15} /></span>
+          <span className="app-updated-cell">{new Date(application.updatedAt).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}<ChevronRight size={15} /></span>
         </button>
       ))}
     </div>

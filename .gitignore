@@ -21,6 +21,8 @@ dist/
 *.key
 *.p12
 *.pfx
+*service-role*
+*service_role*
 
 # Logs and package-manager diagnostics
 *.log
@@ -73,6 +75,13 @@ Screenshot*.png
 # Deployment metadata
 .vercel/
 .netlify/
+
+# Supabase local state and generated secrets
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+supabase/.env.*
+.supabase/
 
 # Temporary files
 tmp/

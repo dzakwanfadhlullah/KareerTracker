@@ -4,8 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3, BriefcaseBusiness, Building2, CalendarDays, FileText, LayoutDashboard,
-  ListTodo, Search, Settings, Target, UserRound,
+  ListTodo, LogOut, MoreHorizontal, Settings, Target, UserRound,
 } from "lucide-react";
+import { logoutAction } from "@/app/(auth)/auth-actions";
+import type { DashboardData } from "@/lib/dashboard/data";
 import { DashboardProvider, useDashboard } from "../DashboardProvider";
 import { AddApplicationDialog, ApplicationDetailDrawer } from "../applications/ApplicationOverlays";
 
@@ -22,8 +24,8 @@ const navItems = [
 
 function ShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { applications, setAddOpen, toast } = useDashboard();
-  const followUpCount = applications.filter((item) => !item.isArchived && (item.attentionStatus === "follow_up_needed" || item.followUpAt)).length;
+  const { followUps, profile, setAddOpen, toast, actionError } = useDashboard();
+  const followUpCount = followUps.filter((item) => !["completed", "cancelled", "rescheduled"].includes(item.status)).length;
 
   return (
     <div className="kt-dashboard app-shell">
@@ -39,11 +41,24 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="app-sidebar-bottom">
           <Link href="/settings" data-active={pathname === "/settings"}><Settings size={18} /><span>Settings</span></Link>
-          <div className="app-user"><span><UserRound size={16} /></span><p>Mara<small>mara@email.com</small></p></div>
+          <div className="app-user"><span><UserRound size={16} /></span><p>{profile.name || "KareerTrack User"}<small>{profile.email}</small></p></div>
+          <form action={logoutAction}><button className="app-logout" type="submit"><LogOut size={16} />Logout</button></form>
         </div>
       </aside>
       <main className="app-main">
-        <div className="app-mobile-topbar"><Link href="/" className="app-mobile-brand">K</Link><button type="button" aria-label="Cari"><Search size={19} /></button><button type="button" aria-label="Tambah lamaran" onClick={() => setAddOpen(true)}>+</button></div>
+        <div className="app-mobile-topbar">
+          <Link href="/" className="app-mobile-brand">K</Link>
+          <details className="app-mobile-more">
+            <summary aria-label="More dashboard links"><MoreHorizontal size={19} /></summary>
+            <div>
+              <Link href="/follow-up">Follow-Up</Link>
+              <Link href="/companies">Companies</Link>
+              <Link href="/documents">Documents</Link>
+              <Link href="/settings">Settings</Link>
+            </div>
+          </details>
+          <button type="button" aria-label="Tambah lamaran" onClick={() => setAddOpen(true)}>+</button>
+        </div>
         {children}
       </main>
       <nav className="app-bottom-nav" aria-label="Mobile dashboard navigation">
@@ -59,11 +74,12 @@ function ShellContent({ children }: { children: React.ReactNode }) {
       </nav>
       <AddApplicationDialog />
       <ApplicationDetailDrawer />
+      {actionError && <div className="app-toast app-toast-error" role="alert">{actionError}</div>}
       {toast && <div className="app-toast" role="status">{toast}</div>}
     </div>
   );
 }
 
-export function DashboardShell({ children }: { children: React.ReactNode }) {
-  return <DashboardProvider><ShellContent>{children}</ShellContent></DashboardProvider>;
+export function DashboardShell({ children, initialData }: { children: React.ReactNode; initialData: DashboardData }) {
+  return <DashboardProvider initialData={initialData}><ShellContent>{children}</ShellContent></DashboardProvider>;
 }

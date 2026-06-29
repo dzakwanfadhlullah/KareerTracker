@@ -206,6 +206,7 @@ export function EarlyAccessSection() {
           <div><p className="eyebrow">EARLY ACCESS</p><h3>Dapatkan akses pertama ke KareerTrack.</h3><p>Mulai pantau semua lamaran kerja kamu dalam satu workspace yang rapi.</p></div>
           <ul>{benefits.map((item) => <li key={item}><Check size={16} />{item}</li>)}</ul>
           <WaitlistForm />
+          <a className="button button-secondary early-admin-login" href="/login">Login sebagai Admin</a>
           <small>No spam. Hanya update penting dari KareerTrack dan MagangKareer.</small>
         </div>
       </Container>

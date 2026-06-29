@@ -1,116 +1,259 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { seedApplications, seedEvents, seedInterviews } from "@/content/dashboard-data";
-import { applicationStatusLabels } from "@/lib/status";
-import type { ApplicationEvent, DashboardApplication, Interview } from "@/types/application";
+import { createContext, useCallback, useContext, useMemo, useState, useTransition } from "react";
+import {
+  archiveApplicationAction,
+  attachDocumentAction,
+  completeFollowUpAction,
+  createApplicationAction,
+  createInterviewAction,
+  markFinalResultAction,
+  saveSettingsAction,
+  saveWeeklyReviewAction,
+  setFollowUpAction,
+  updateApplicationStatusAction,
+  updateCompanyResearchAction,
+  type DashboardActionResult,
+} from "@/lib/dashboard/actions";
+import type { DashboardData } from "@/lib/dashboard/data";
+import type {
+  ApplicationEvent,
+  Company,
+  DashboardApplication,
+  DashboardDocument,
+  FollowUp,
+  Interview,
+  UserPreferences,
+  UserProfile,
+  WeeklyReview,
+} from "@/types/application";
 import type { ApplicationStatus } from "@/types/status";
 
 type NewApplication = Pick<DashboardApplication, "companyName" | "roleTitle" | "source" | "status"> &
   Partial<Pick<DashboardApplication, "jobUrl" | "deadlineAt" | "appliedAt" | "followUpAt" | "nextAction" | "notes">>;
 
-type DashboardContextValue = {
-  applications: DashboardApplication[];
-  events: ApplicationEvent[];
-  interviews: Interview[];
+type NewInterview = {
+  applicationId: string;
+  stage?: Interview["stage"];
+  scheduledAt?: string;
+  locationType?: Interview["locationType"];
+  interviewerName?: string;
+  preparationNotes?: string;
+  questionsToPrepare?: string[];
+  nextStep?: string;
+};
+
+type CompanyResearchInput = {
+  applicationId: string;
+  name?: string;
+  industry?: string;
+  websiteUrl?: string;
+  whyIApply?: string;
+  companyNotes?: string;
+  cultureNotes?: string;
+  redFlags?: string;
+  questionsForInterviewer?: string;
+};
+
+type DocumentInput = {
+  applicationId: string;
+  name: string;
+  type?: DashboardDocument["type"];
+  status?: DashboardDocument["status"];
+  url?: string;
+  notes?: string;
+};
+
+type SettingsInput = {
+  name: string;
+  followUpAfterDays: number;
+  ghostedAfterDays: number;
+  notificationEmailEnabled: boolean;
+};
+
+type WeeklyReviewInput = {
+  weekStart: string;
+  weekEnd: string;
+  insight?: string;
+  nextWeekFocus?: string;
+  reflectionNotes?: string;
+};
+
+type DashboardContextValue = DashboardData & {
   selectedId: string | null;
   addOpen: boolean;
   toast: string | null;
+  actionError: string | null;
+  actionPending: boolean;
   selectApplication: (id: string | null) => void;
   setAddOpen: (open: boolean) => void;
   addApplication: (input: NewApplication) => void;
   updateStatus: (id: string, status: ApplicationStatus) => void;
   setFollowUp: (id: string, date: string) => void;
-  completeFollowUp: (id: string) => void;
+  completeFollowUp: (id: string, outcome?: "no_response_yet" | "recruiter_replied" | "interview_scheduled" | "test_scheduled" | "rejected" | "rescheduled" | "marked_ghosted" | "other") => void;
   archiveApplication: (id: string) => void;
+  createInterview: (input: NewInterview) => void;
+  updateCompanyResearch: (input: CompanyResearchInput) => void;
+  attachDocument: (input: DocumentInput) => void;
+  markFinalResult: (input: { applicationId: string; result: "accepted" | "rejected" | "ghosted"; reflectionNotes?: string }) => void;
+  saveSettings: (input: SettingsInput) => void;
+  saveWeeklyReview: (input: WeeklyReviewInput) => void;
 };
 
 const DashboardContext = createContext<DashboardContextValue | null>(null);
-const STORAGE_KEY = "kareertrack-dashboard-applications";
 
-export function DashboardProvider({ children }: { children: React.ReactNode }) {
-  const [applications, setApplications] = useState(seedApplications);
-  const [events, setEvents] = useState(seedEvents);
-  const [interviews] = useState(seedInterviews);
+export function DashboardProvider({ children, initialData }: { children: React.ReactNode; initialData: DashboardData }) {
+  const [profile, setProfile] = useState<UserProfile>(initialData.profile);
+  const [preferences, setPreferences] = useState<UserPreferences>(initialData.preferences);
+  const [applications, setApplications] = useState<DashboardApplication[]>(initialData.applications);
+  const [events, setEvents] = useState<ApplicationEvent[]>(initialData.events);
+  const [followUps, setFollowUps] = useState<FollowUp[]>(initialData.followUps);
+  const [interviews, setInterviews] = useState<Interview[]>(initialData.interviews);
+  const [companies, setCompanies] = useState<Company[]>(initialData.companies);
+  const [documents, setDocuments] = useState<DashboardDocument[]>(initialData.documents);
+  const [weeklyReviews, setWeeklyReviews] = useState<WeeklyReview[]>(initialData.weeklyReviews);
   const [selectedId, selectApplication] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(applications));
-  }, [applications]);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionPending, startTransition] = useTransition();
 
   const notify = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(null), 2800);
   }, []);
 
-  const addEvent = useCallback((event: Omit<ApplicationEvent, "id" | "createdAt">) => {
-    setEvents((current) => [{ ...event, id: crypto.randomUUID(), createdAt: new Date().toISOString() }, ...current]);
-  }, []);
+  const applyResult = useCallback((result: DashboardActionResult, options?: { closeAdd?: boolean; closeDetail?: boolean }) => {
+    if (!result.ok || !result.data) {
+      setActionError(result.message);
+      notify(result.message);
+      return;
+    }
+
+    setActionError(null);
+    setProfile(result.data.profile);
+    setPreferences(result.data.preferences);
+    setApplications(result.data.applications);
+    setEvents(result.data.events);
+    setFollowUps(result.data.followUps);
+    setInterviews(result.data.interviews);
+    setCompanies(result.data.companies);
+    setDocuments(result.data.documents);
+    setWeeklyReviews(result.data.weeklyReviews);
+    if (options?.closeAdd) setAddOpen(false);
+    if (options?.closeDetail) selectApplication(null);
+    notify(result.message);
+  }, [notify]);
+
+  const runAction = useCallback((action: () => Promise<DashboardActionResult>, options?: { closeAdd?: boolean; closeDetail?: boolean }) => {
+    startTransition(() => {
+      action().then((result) => applyResult(result, options)).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "Aksi gagal diproses.";
+        setActionError(message);
+        notify(message);
+      });
+    });
+  }, [applyResult, notify]);
 
   const addApplication = useCallback((input: NewApplication) => {
-    const id = crypto.randomUUID();
-    const timestamp = new Date().toISOString();
-    setApplications((current) => [{
-      ...input,
-      id,
-      jobUrl: input.jobUrl || null,
-      deadlineAt: input.deadlineAt || null,
-      appliedAt: input.appliedAt || null,
-      followUpAt: input.followUpAt || null,
-      nextAction: input.nextAction || "Review requirements",
-      notes: input.notes || null,
-      isArchived: false,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    }, ...current]);
-    addEvent({ applicationId: id, type: "application_created", title: "Application created", description: `${input.companyName} · ${input.roleTitle}` });
-    setAddOpen(false);
-    notify("Lamaran berhasil ditambahkan.");
-  }, [addEvent, notify]);
+    runAction(() => createApplicationAction(input), { closeAdd: true });
+  }, [runAction]);
 
   const updateStatus = useCallback((id: string, status: ApplicationStatus) => {
-    let previous: ApplicationStatus = "saved";
-    setApplications((current) => current.map((item) => {
-      if (item.id !== id) return item;
-      previous = item.status;
-      return {
-        ...item,
-        status,
-        result: ["accepted", "rejected", "ghosted"].includes(status) ? status as "accepted" | "rejected" | "ghosted" : item.result,
-        followUpAt: ["accepted", "rejected", "ghosted"].includes(status) ? null : item.followUpAt,
-        attentionStatus: status === "follow_up_needed" ? "follow_up_needed" : status === "waiting_response" ? item.attentionStatus : null,
-        updatedAt: new Date().toISOString(),
-      };
-    }));
-    addEvent({ applicationId: id, type: "status_changed", title: `Status changed to ${applicationStatusLabels[status]}`, description: `${applicationStatusLabels[previous]} → ${applicationStatusLabels[status]}` });
-    notify("Status lamaran berhasil diperbarui.");
-  }, [addEvent, notify]);
+    runAction(() => updateApplicationStatusAction(id, status));
+  }, [runAction]);
 
   const setFollowUp = useCallback((id: string, date: string) => {
-    setApplications((current) => current.map((item) => item.id === id ? { ...item, followUpAt: date, nextAction: "Follow-up scheduled", attentionStatus: "follow_up_needed", updatedAt: new Date().toISOString() } : item));
-    addEvent({ applicationId: id, type: "follow_up_scheduled", title: "Follow-up scheduled", description: new Date(date).toLocaleDateString("id-ID", { dateStyle: "medium" }) });
-    notify("Follow-up berhasil dijadwalkan.");
-  }, [addEvent, notify]);
+    runAction(() => setFollowUpAction({ applicationId: id, dueAt: date }));
+  }, [runAction]);
 
-  const completeFollowUp = useCallback((id: string) => {
-    setApplications((current) => current.map((item) => item.id === id ? { ...item, followUpAt: null, lastFollowedUpAt: new Date().toISOString(), attentionStatus: null, nextAction: "Wait for response", updatedAt: new Date().toISOString() } : item));
-    addEvent({ applicationId: id, type: "follow_up_completed", title: "Follow-up completed", description: "Menunggu respon berikutnya." });
-    notify("Follow-up ditandai selesai.");
-  }, [addEvent, notify]);
+  const completeFollowUp = useCallback((id: string, outcome = "no_response_yet") => {
+    runAction(() => completeFollowUpAction({ applicationId: id, outcome }));
+  }, [runAction]);
 
   const archiveApplication = useCallback((id: string) => {
-    setApplications((current) => current.map((item) => item.id === id ? { ...item, isArchived: true, updatedAt: new Date().toISOString() } : item));
-    addEvent({ applicationId: id, type: "application_archived", title: "Application archived" });
-    selectApplication(null);
-    notify("Lamaran dipindahkan ke arsip.");
-  }, [addEvent, notify]);
+    runAction(() => archiveApplicationAction(id), { closeDetail: true });
+  }, [runAction]);
+
+  const createInterview = useCallback((input: NewInterview) => {
+    runAction(() => createInterviewAction(input));
+  }, [runAction]);
+
+  const updateCompanyResearch = useCallback((input: CompanyResearchInput) => {
+    runAction(() => updateCompanyResearchAction(input));
+  }, [runAction]);
+
+  const attachDocument = useCallback((input: DocumentInput) => {
+    runAction(() => attachDocumentAction(input));
+  }, [runAction]);
+
+  const markFinalResult = useCallback((input: { applicationId: string; result: "accepted" | "rejected" | "ghosted"; reflectionNotes?: string }) => {
+    runAction(() => markFinalResultAction(input));
+  }, [runAction]);
+
+  const saveSettings = useCallback((input: SettingsInput) => {
+    runAction(() => saveSettingsAction(input));
+  }, [runAction]);
+
+  const saveWeeklyReview = useCallback((input: WeeklyReviewInput) => {
+    runAction(() => saveWeeklyReviewAction(input));
+  }, [runAction]);
 
   const value = useMemo(() => ({
-    applications, events, interviews, selectedId, addOpen, toast, selectApplication, setAddOpen,
-    addApplication, updateStatus, setFollowUp, completeFollowUp, archiveApplication,
-  }), [applications, events, interviews, selectedId, addOpen, toast, addApplication, updateStatus, setFollowUp, completeFollowUp, archiveApplication]);
+    profile,
+    preferences,
+    applications,
+    events,
+    followUps,
+    interviews,
+    companies,
+    documents,
+    weeklyReviews,
+    selectedId,
+    addOpen,
+    toast,
+    actionError,
+    actionPending,
+    selectApplication,
+    setAddOpen,
+    addApplication,
+    updateStatus,
+    setFollowUp,
+    completeFollowUp,
+    archiveApplication,
+    createInterview,
+    updateCompanyResearch,
+    attachDocument,
+    markFinalResult,
+    saveSettings,
+    saveWeeklyReview,
+  }), [
+    profile,
+    preferences,
+    applications,
+    events,
+    followUps,
+    interviews,
+    companies,
+    documents,
+    weeklyReviews,
+    selectedId,
+    addOpen,
+    toast,
+    actionError,
+    actionPending,
+    addApplication,
+    updateStatus,
+    setFollowUp,
+    completeFollowUp,
+    archiveApplication,
+    createInterview,
+    updateCompanyResearch,
+    attachDocument,
+    markFinalResult,
+    saveSettings,
+    saveWeeklyReview,
+  ]);
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;
 }

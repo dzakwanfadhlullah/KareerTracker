@@ -35,6 +35,20 @@ export type DashboardApplication = {
   updatedAt: string;
 };
 
+export type FollowUp = {
+  id: string;
+  applicationId: string;
+  dueAt: string;
+  completedAt?: string | null;
+  status: "scheduled" | "due" | "overdue" | "completed" | "cancelled" | "rescheduled";
+  channel?: string | null;
+  message?: string | null;
+  outcome?: "no_response_yet" | "recruiter_replied" | "interview_scheduled" | "test_scheduled" | "rejected" | "rescheduled" | "marked_ghosted" | "other" | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ApplicationEvent = {
   id: string;
   applicationId: string;
@@ -69,4 +83,57 @@ export type Interview = {
   feedback?: string | null;
   nextStep?: string | null;
   status: "scheduled" | "needs_preparation" | "completed" | "waiting_result" | "cancelled" | "rescheduled";
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type Company = {
+  id: string;
+  name: string;
+  industry?: string | null;
+  websiteUrl?: string | null;
+  source?: string | null;
+  whyIApply?: string | null;
+  companyNotes?: string | null;
+  cultureNotes?: string | null;
+  productsServices?: string | null;
+  redFlags?: string | null;
+  questionsForInterviewer?: string | null;
+  recruitmentProcessNotes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DashboardDocument = {
+  id: string;
+  name: string;
+  type: "cv_ats" | "cv_creative" | "portfolio" | "cover_letter" | "transcript" | "certificate" | "linkedin_url" | "github_url" | "behance_url" | "personal_website" | "other";
+  status: "ready" | "needs_review" | "draft" | "old_version";
+  url?: string | null;
+  versionLabel?: string | null;
+  notes?: string | null;
+  linkedApplicationIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UserProfile = {
+  name: string | null;
+  email: string;
+};
+
+export type UserPreferences = {
+  followUpAfterDays: number;
+  ghostedAfterDays: number;
+  timezone: string;
+  notificationEmailEnabled: boolean;
+};
+
+export type WeeklyReview = {
+  id: string;
+  weekStart: string;
+  weekEnd: string;
+  insight?: string | null;
+  nextWeekFocus?: string | null;
+  reflectionNotes?: string | null;
 };
